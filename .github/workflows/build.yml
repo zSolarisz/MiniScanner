@@ -11,23 +11,21 @@ jobs:
     - name: 1. Lay code tu kho chua
       uses: actions/checkout@v4
 
-    - name: 2. Sửa lỗi định dạng xuống dòng (CRLF to LF)
-      run: |
-        sed -i 's/\r$//' gradlew
-
-    - name: 3. Thiet lap moi truong Java 17
+    - name: 2. Thiet lap moi truong Java 17
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: 4. Cap quyen chay cho Gradle Linux
-      run: chmod +x gradlew
+    - name: 3. Thiet lap bo may Gradle thuc thi
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: 8.7 # Ep may ao dung truc tiep Gradle xịn ban 8.7 co san tren may chu
 
-    - name: 5. Chay lenh assembleDebug de tao APK
-      run: ./gradlew assembleDebug --no-daemon
+    - name: 4. Bat dau dong goi APK
+      run: gradle assembleDebug --no-daemon # Dung truc tiep lenh gradle he thong, khong can file ./gradlew nua
 
-    - name: 6. Xuat file APK ra ngoai de tai ve
+    - name: 5. Xuat file APK ra ngoai de tai ve
       uses: actions/upload-artifact@v4
       with:
         name: MiniScanner-APK-Thanh-Cong
