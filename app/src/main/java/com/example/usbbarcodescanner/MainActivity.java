@@ -20,6 +20,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         
         btnScan = findViewById(R.id.btnScan);
+        // Khởi tạo bộ quét mã vạch Google mã nguồn cao cấp MLKit
         scanner = GmsBarcodeScanning.getClient(this);
 
         btnScan.setOnClickListener(v -> {
@@ -27,43 +28,59 @@ public class MainActivity extends AppCompatActivity {
                 .addOnSuccessListener(barcode -> {
                     String rawValue = barcode.getRawValue();
                     if (rawValue != null) {
+                        // Quét thành công -> Gọi luồng đẩy dữ liệu HTTP sang PC ngay lập tức
                         sendBarcodeViaHttp(rawValue);
                     }
                 })
                 .addOnFailureListener(e -> {
-                    Toast.makeText(MainActivity.this, "Hủy hoặc lỗi quét", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "Người dùng hủy hoặc quét lỗi", Toast.LENGTH_SHORT).show();
                 });
         });
     }
 
+    /**
+     * Hàm truyền dữ liệu mã vạch sang PC bằng giao thức HTTP POST thông qua ADB Reverse
+     */
     private void sendBarcodeViaHttp(final String barcodeData) {
+        // Bắt buộc thực hiện Network trên Thread riêng để tránh lỗi NetworkOnMainThreadException
         new Thread(() -> {
             HttpURLConnection connection = null;
             try {
-                // Kết nối tới cổng ADB đã forward trên localhost của điện thoại
-                URL url = new URL("http://127.0.0.1:12580/");
+                // Sử dụng http://localhost:12580/ để ép Android điều hướng qua card mạng ảo ADB Reverse về thẳng PC
+                URL url = new URL("http://localhost:12580/");
                 connection = (HttpURLConnection) url.openConnection();
+                
+                // Thiết lập cấu hình Header cho gói tin HTTP POST
                 connection.setRequestMethod("POST");
                 connection.setDoOutput(true);
-                connection.setConnectTimeout(1000);
-                connection.setReadTimeout(1000);
+                connection.setConnectTimeout(1500); // Thời gian chờ kết nối tối đa 1.5 giây
+                connection.setReadTimeout(1500);    // Thời gian chờ phản hồi tối đa 1.5 giây
+                connection.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
 
-                // Gửi mã vạch đi
+                // Tiến hành ghi dữ liệu chuỗi mã vạch vào luồng Output Stream
                 OutputStream os = connection.getOutputStream();
                 os.write(barcodeData.getBytes("UTF-8"));
                 os.flush();
                 os.close();
 
-                // Nhận phản hồi từ PC để xác nhận kết nối thành công
+                // Đọc mã phản hồi (Response Code) từ PC gửi về
                 int responseCode = connection.getResponseCode();
-                if (responseCode == 200) {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Đã gửi tới PC thành công!", Toast.LENGTH_SHORT).show());
+                
+                // Nếu PC trả về mã 200 OK, hiển thị thông báo thành công lên màn hình điện thoại
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "🚀 Đã truyền tới PC: " + barcodeData, Toast.LENGTH_SHORT).show());
+                } else {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "⚠️ PC phản hồi lỗi: " + responseCode, Toast.LENGTH_SHORT).show());
                 }
+                
             } catch (Exception e) {
                 e.printStackTrace();
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Lỗi truyền dữ liệu USB!", Toast.LENGTH_SHORT).show());
+                // Bắn Toast cảnh báo nếu đường truyền cáp USB lỏng hoặc Python chưa bật
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "❌ Lỗi kết nối! Hãy kiểm tra script PC và cáp USB.", Toast.LENGTH_LONG).show());
             } finally {
-                if (connection != null) connection.disconnect();
+                if (connection != null) {
+                    connection.disconnect(); // Ngắt kết nối để giải phóng tài nguyên mạng Android
+                }
             }
         }).start();
     }
