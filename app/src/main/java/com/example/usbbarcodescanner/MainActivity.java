@@ -13,11 +13,6 @@ import java.net.Socket;
 public class MainActivity extends AppCompatActivity {
     private Button btnScan;
     private GmsBarcodeScanner scanner;
-    
-    // Biến lưu trữ mã vạch tạm thời để luồng lắng nghe lấy ra gửi đi
-    private final Object lock = new Object();
-    private String pendingBarcode = null;
-    private boolean isRunning = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -27,19 +22,13 @@ public class MainActivity extends AppCompatActivity {
         btnScan = findViewById(R.id.btnScan);
         scanner = GmsBarcodeScanning.getClient(this);
 
-        // Khởi động luồng chạy ngầm mở Server Socket ngay khi mở App
-        startAndroidServer();
-
         btnScan.setOnClickListener(v -> {
             scanner.startScan()
                 .addOnSuccessListener(barcode -> {
                     String rawValue = barcode.getRawValue();
                     if (rawValue != null) {
-                        // Khi quét thành công, cập nhật mã vạch vào biến tạm và đánh thức luồng gửi dữ liệu
-                        synchronized (lock) {
-                            pendingBarcode = rawValue;
-                            lock.notify(); 
-                        }
+                        // Quét được mã nào, mở cổng đẩy ngay mã đó sang PC
+                        sendBarcodeToPC(rawValue);
                         Toast.makeText(MainActivity.this, "Đã quét: " + rawValue, Toast.LENGTH_SHORT).show();
                     }
                 })
@@ -50,66 +39,40 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Khởi tạo ServerSocket chạy ngầm liên tục trên điện thoại để PC kết nối và lấy dữ liệu
+     * Cơ chế On-Demand: Chỉ mở cổng Server khi thực sự có dữ liệu quét được
      */
-    private void startAndroidServer() {
+    private void sendBarcodeToPC(final String barcodeData) {
         new Thread(() -> {
             ServerSocket serverSocket = null;
+            Socket clientSocket = null;
             try {
-                // Mở cổng 12580 trên Android
+                // 1. Khởi tạo Server lắng nghe tại cổng 12580 trên điện thoại
                 serverSocket = new ServerSocket(12580);
+                // Cho phép tái sử dụng cổng ngay lập tức, giải phóng bộ nhớ đệm socket giải quyết độ trễ
+                serverSocket.setReuseAddress(true); 
                 
-                while (isRunning) {
-                    Socket clientSocket = null;
-                    try {
-                        // Lệnh này sẽ đứng đợi (block) cho đến khi script Python từ PC kết nối tới
-                        clientSocket = serverSocket.accept();
-                        
-                        // Đợi cho đến khi người dùng quét được một mã vạch mới
-                        synchronized (lock) {
-                            while (pendingBarcode == null && isRunning) {
-                                lock.wait(); // Tạm dừng luồng, không tốn tài nguyên pin
-                            }
-                        }
-
-                        if (!isRunning) break;
-
-                        // Tiến hành đẩy mã vạch sang PC
-                        if (pendingBarcode != null) {
-                            PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true);
-                            writer.println(pendingBarcode);
-                            writer.flush();
-                            
-                            // Gửi xong thì xóa bộ nhớ tạm để chuẩn bị cho lần quét tiếp theo
-                            synchronized (lock) {
-                                pendingBarcode = null;
-                            }
-                        }
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    } finally {
-                        if (clientSocket != null) {
-                            try { clientSocket.close(); } catch (Exception ignored) {}
-                        }
-                    }
-                }
+                // 2. Chờ tối đa 5 giây để script Python bên PC nhảy vào lấy dữ liệu
+                serverSocket.setSoTimeout(5000); 
+                
+                // Chấp nhận kết nối từ Client (Python)
+                clientSocket = serverSocket.accept();
+                
+                // 3. Đẩy dữ liệu sang PC
+                PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true);
+                writer.println(barcodeData);
+                writer.flush();
+                
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
+                // Đóng dứt điểm kết nối để chuẩn bị cho lần quét kế tiếp
+                if (clientSocket != null) {
+                    try { clientSocket.close(); } catch (Exception ignored) {}
+                }
                 if (serverSocket != null) {
                     try { serverSocket.close(); } catch (Exception ignored) {}
                 }
             }
         }).start();
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        // Tắt luồng ngầm khi thoát hẳn ứng dụng để tránh rò rỉ bộ nhớ
-        isRunning = false;
-        synchronized (lock) {
-            lock.notifyAll();
-        }
     }
 }
