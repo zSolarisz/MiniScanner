@@ -7,8 +7,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.Socket;
 
 public class MainActivity extends AppCompatActivity {
     private Button btnScan;
@@ -20,7 +19,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         
         btnScan = findViewById(R.id.btnScan);
-        // Khởi tạo bộ quét mã vạch Google mã nguồn cao cấp MLKit
+        // Khởi tạo bộ quét mã vạch Google MLKit
         scanner = GmsBarcodeScanning.getClient(this);
 
         btnScan.setOnClickListener(v -> {
@@ -28,8 +27,8 @@ public class MainActivity extends AppCompatActivity {
                 .addOnSuccessListener(barcode -> {
                     String rawValue = barcode.getRawValue();
                     if (rawValue != null) {
-                        // Quét thành công -> Gọi luồng đẩy dữ liệu HTTP sang PC ngay lập tức
-                        sendBarcodeViaHttp(rawValue);
+                        // Quét thành công -> Bắn dữ liệu bằng Socket thuần ngay lập tức
+                        sendBarcodeViaSocket(rawValue);
                     }
                 })
                 .addOnFailureListener(e -> {
@@ -39,47 +38,35 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Hàm truyền dữ liệu mã vạch sang PC bằng giao thức HTTP POST thông qua ADB Reverse
+     * Hàm truyền dữ liệu mã vạch sang PC bằng TCP Socket thuần qua ADB Reverse
+     * Không lo bị Android Sandbox chặn HTTP Cleartext
      */
-    private void sendBarcodeViaHttp(final String barcodeData) {
-        // Bắt buộc thực hiện Network trên Thread riêng để tránh lỗi NetworkOnMainThreadException
+    private void sendBarcodeViaSocket(final String barcodeData) {
+        // Chạy trên Thread riêng để tránh NetworkOnMainThreadException
         new Thread(() -> {
-            HttpURLConnection connection = null;
+            Socket socket = null;
             try {
-                // Sử dụng http://localhost:12580/ để ép Android điều hướng qua card mạng ảo ADB Reverse về thẳng PC
-                URL url = new URL("http://localhost:12580/");
-                connection = (HttpURLConnection) url.openConnection();
+                // Kết nối vào localhost cổng 12580 của ĐT. 
+                // Lệnh 'adb reverse' trên PC sẽ tự bẻ hướng luồng này về cổng sạch 58021 trên PC.
+                socket = new Socket("127.0.0.1", 12580);
                 
-                // Thiết lập cấu hình Header cho gói tin HTTP POST
-                connection.setRequestMethod("POST");
-                connection.setDoOutput(true);
-                connection.setConnectTimeout(1500); // Thời gian chờ kết nối tối đa 1.5 giây
-                connection.setReadTimeout(1500);    // Thời gian chờ phản hồi tối đa 1.5 giây
-                connection.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
-
-                // Tiến hành ghi dữ liệu chuỗi mã vạch vào luồng Output Stream
-                OutputStream os = connection.getOutputStream();
+                // Ghi trực tiếp dữ liệu thô vào luồng stream, cực nhẹ và nhanh
+                OutputStream os = socket.getOutputStream();
                 os.write(barcodeData.getBytes("UTF-8"));
                 os.flush();
                 os.close();
-
-                // Đọc mã phản hồi (Response Code) từ PC gửi về
-                int responseCode = connection.getResponseCode();
                 
-                // Nếu PC trả về mã 200 OK, hiển thị thông báo thành công lên màn hình điện thoại
-                if (responseCode == HttpURLConnection.HTTP_OK) {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "🚀 Đã truyền tới PC: " + barcodeData, Toast.LENGTH_SHORT).show());
-                } else {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "⚠️ PC phản hồi lỗi: " + responseCode, Toast.LENGTH_SHORT).show());
-                }
+                // Hiển thị thông báo thành công trên điện thoại
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "🚀 Đã truyền tới PC: " + barcodeData, Toast.LENGTH_SHORT).show());
                 
             } catch (Exception e) {
                 e.printStackTrace();
-                // Bắn Toast cảnh báo nếu đường truyền cáp USB lỏng hoặc Python chưa bật
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "❌ Lỗi kết nối! Hãy kiểm tra script PC và cáp USB.", Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "❌ Lỗi kết nối! Kiểm tra cáp USB hoặc script PC.", Toast.LENGTH_LONG).show());
             } finally {
-                if (connection != null) {
-                    connection.disconnect(); // Ngắt kết nối để giải phóng tài nguyên mạng Android
+                if (socket != null) {
+                    try {
+                        socket.close(); // Đóng socket để giải phóng tài nguyên
+                    } catch (Exception ignored) {}
                 }
             }
         }).start();
