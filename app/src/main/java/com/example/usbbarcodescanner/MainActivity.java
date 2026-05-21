@@ -6,9 +6,9 @@ import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
-import java.io.PrintWriter;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 public class MainActivity extends AppCompatActivity {
     private Button btnScan;
@@ -27,51 +27,43 @@ public class MainActivity extends AppCompatActivity {
                 .addOnSuccessListener(barcode -> {
                     String rawValue = barcode.getRawValue();
                     if (rawValue != null) {
-                        // Quét được mã nào, mở cổng đẩy ngay mã đó sang PC
-                        sendBarcodeToPC(rawValue);
-                        Toast.makeText(MainActivity.this, "Đã quét: " + rawValue, Toast.LENGTH_SHORT).show();
+                        sendBarcodeViaHttp(rawValue);
                     }
                 })
                 .addOnFailureListener(e -> {
-                    Toast.makeText(MainActivity.this, "Hủy hoặc lỗi quét mã", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "Hủy hoặc lỗi quét", Toast.LENGTH_SHORT).show();
                 });
         });
     }
 
-    /**
-     * Cơ chế On-Demand: Chỉ mở cổng Server khi thực sự có dữ liệu quét được
-     */
-    private void sendBarcodeToPC(final String barcodeData) {
+    private void sendBarcodeViaHttp(final String barcodeData) {
         new Thread(() -> {
-            ServerSocket serverSocket = null;
-            Socket clientSocket = null;
+            HttpURLConnection connection = null;
             try {
-                // 1. Khởi tạo Server lắng nghe tại cổng 12580 trên điện thoại
-                serverSocket = new ServerSocket(12580);
-                // Cho phép tái sử dụng cổng ngay lập tức, giải phóng bộ nhớ đệm socket giải quyết độ trễ
-                serverSocket.setReuseAddress(true); 
-                
-                // 2. Chờ tối đa 5 giây để script Python bên PC nhảy vào lấy dữ liệu
-                serverSocket.setSoTimeout(5000); 
-                
-                // Chấp nhận kết nối từ Client (Python)
-                clientSocket = serverSocket.accept();
-                
-                // 3. Đẩy dữ liệu sang PC
-                PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true);
-                writer.println(barcodeData);
-                writer.flush();
-                
+                // Kết nối tới cổng ADB đã forward trên localhost của điện thoại
+                URL url = new URL("http://127.0.0.1:12580/");
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setDoOutput(true);
+                connection.setConnectTimeout(1000);
+                connection.setReadTimeout(1000);
+
+                // Gửi mã vạch đi
+                OutputStream os = connection.getOutputStream();
+                os.write(barcodeData.getBytes("UTF-8"));
+                os.flush();
+                os.close();
+
+                // Nhận phản hồi từ PC để xác nhận kết nối thành công
+                int responseCode = connection.getResponseCode();
+                if (responseCode == 200) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Đã gửi tới PC thành công!", Toast.LENGTH_SHORT).show());
+                }
             } catch (Exception e) {
                 e.printStackTrace();
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Lỗi truyền dữ liệu USB!", Toast.LENGTH_SHORT).show());
             } finally {
-                // Đóng dứt điểm kết nối để chuẩn bị cho lần quét kế tiếp
-                if (clientSocket != null) {
-                    try { clientSocket.close(); } catch (Exception ignored) {}
-                }
-                if (serverSocket != null) {
-                    try { serverSocket.close(); } catch (Exception ignored) {}
-                }
+                if (connection != null) connection.disconnect();
             }
         }).start();
     }
