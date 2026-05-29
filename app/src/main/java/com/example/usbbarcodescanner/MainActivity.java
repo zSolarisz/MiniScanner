@@ -143,7 +143,7 @@ public class MainActivity extends AppCompatActivity {
 
                 // ĐÃ FIX: Chỉ yêu cầu duy nhất kiểu truyền tải là WI-FI, gỡ bỏ hoàn toàn bộ lọc capability lỗi
                 NetworkRequest request = new NetworkRequest.Builder()
-                        .addTransportType(NetworkCapabilities.TRANSPORT_TRANSPORT_WIFI)
+                        .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
                         .setNetworkSpecifier(specifier)
                         .build();
 
