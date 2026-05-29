@@ -1,16 +1,114 @@
-<?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:gravity="center"
-    android:background="#F5F5F5">
-    <Button
-        android:id="@+id/btnScan"
-        android:layout_width="260dp"
-        android:layout_height="80dp"
-        android:text="BAM DE QUET MA"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:backgroundTint="#007ACC"
-        android:textColor="#FFFFFF" />
-</RelativeLayout>
+package zSolarisz.MiniScanner; // Bạn hãy kiểm tra và giữ đúng dòng package gốc ở đầu file cũ của bạn nhé
+
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.MacAddress;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.net.wifi.WifiNetworkSpecifier;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.PatternMatcher;
+import android.view.View;
+import android.widget.Button;
+import android.widget.Toast;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+
+public class MainActivity extends AppCompatActivity {
+
+    // Thông số mạng nhà bạn thu thập từ Wi-Fi Analyzer
+    private final String TARGET_SSID = "HAI HUONG 2.4Ghz";
+    private final String TARGET_BSSID = "84:3c:99:57:3d:e0";
+
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // Tạo nhanh giao diện 1 nút bấm trực tiếp bằng Java
+        Button button = new Button(this);
+        button.setText("ÉP KẾT NỐI WI-FI 5GHZ NHÀ");
+        button.setTextSize(18f);
+        setContentView(button);
+
+        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (checkPermissions()) {
+                    forceConnectTo5GHz();
+                } else {
+                    requestPermissions();
+                }
+            }
+        });
+    }
+
+    private void forceConnectTo5GHz() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                WifiNetworkSpecifier specifier = new WifiNetworkSpecifier.Builder()
+                        .setSsidPattern(new PatternMatcher(TARGET_SSID, PatternMatcher.PATTERN_LITERAL))
+                        .setBssid(MacAddress.fromString(TARGET_BSSID))
+                        .build();
+
+                NetworkRequest request = new NetworkRequest.Builder()
+                        .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                        .setNetworkSpecifier(specifier)
+                        .build();
+
+                if (networkCallback != null) {
+                    connectivityManager.unregisterNetworkCallback(networkCallback);
+                }
+
+                networkCallback = new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(Network network) {
+                        super.onAvailable(network);
+                        connectivityManager.bindProcessToNetwork(network);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(MainActivity.this, "Đã ép sóng 5GHz thành công!", Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onUnavailable() {
+                        super.onUnavailable() ;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(MainActivity.this, "Không tìm thấy luồng 5GHz hoặc bị từ chối", Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    }
+                };
+
+                connectivityManager.requestNetwork(request, networkCallback);
+                Toast.makeText(this, "Đang quét và ép kết nối...", Toast.LENGTH_SHORT).show();
+
+            } catch (Exception e) {
+                Toast.makeText(this, "Lỗi: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Toast.makeText(this, "Thiết bị cần chạy Android 10 trở lên", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private boolean checkPermissions() {
+        return ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestPermissions() {
+        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 100);
+    }
+}
