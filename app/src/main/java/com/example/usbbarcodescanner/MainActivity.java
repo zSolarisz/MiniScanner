@@ -1,74 +1,114 @@
-package com.example.usbbarcodescanner;
+package com.example.usbbarcodescanner; // Giữ đúng tên package cũ để không lệch thư mục
 
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.MacAddress;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.net.wifi.WifiNetworkSpecifier;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.PatternMatcher;
+import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
-import java.io.OutputStream;
-import java.net.Socket;
+import androidx.core.app.ActivityCompat;
 
 public class MainActivity extends AppCompatActivity {
-    private Button btnScan;
-    private GmsBarcodeScanner scanner;
+
+    // Thông số mạng nhà bạn thu thập từ Wi-Fi Analyzer
+    private final String TARGET_SSID = "HAI HUONG 2.4Ghz";
+    private final String TARGET_BSSID = "84:3c:99:57:3d:e0";
+
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        
-        btnScan = findViewById(R.id.btnScan);
-        // Khởi tạo bộ quét mã vạch Google MLKit
-        scanner = GmsBarcodeScanning.getClient(this);
 
-        btnScan.setOnClickListener(v -> {
-            scanner.startScan()
-                .addOnSuccessListener(barcode -> {
-                    String rawValue = barcode.getRawValue();
-                    if (rawValue != null) {
-                        // Quét thành công -> Bắn dữ liệu bằng Socket thuần ngay lập tức
-                        sendBarcodeViaSocket(rawValue);
-                    }
-                })
-                .addOnFailureListener(e -> {
-                    Toast.makeText(MainActivity.this, "Người dùng hủy hoặc quét lỗi", Toast.LENGTH_SHORT).show();
-                });
+        // Tạo giao diện động trực tiếp bằng Java, không phụ thuộc vào file XML
+        Button button = new Button(this);
+        button.setText("ÉP KẾT NỐI WI-FI 5GHZ NHÀ");
+        button.setTextSize(18f);
+        setContentView(button);
+
+        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (checkPermissions()) {
+                    forceConnectTo5GHz();
+                } else {
+                    requestPermissions();
+                }
+            }
         });
     }
 
-    /**
-     * Hàm truyền dữ liệu mã vạch sang PC bằng TCP Socket thuần qua ADB Reverse
-     * Không lo bị Android Sandbox chặn HTTP Cleartext
-     */
-    private void sendBarcodeViaSocket(final String barcodeData) {
-        // Chạy trên Thread riêng để tránh NetworkOnMainThreadException
-        new Thread(() -> {
-            Socket socket = null;
+    private void forceConnectTo5GHz() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
-                // Kết nối vào localhost cổng 12580 của ĐT. 
-                // Lệnh 'adb reverse' trên PC sẽ tự bẻ hướng luồng này về cổng sạch 58021 trên PC.
-                socket = new Socket("127.0.0.1", 12580);
-                
-                // Ghi trực tiếp dữ liệu thô vào luồng stream, cực nhẹ và nhanh
-                OutputStream os = socket.getOutputStream();
-                os.write(barcodeData.getBytes("UTF-8"));
-                os.flush();
-                os.close();
-                
-                // Hiển thị thông báo thành công trên điện thoại
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "🚀 Đã truyền tới PC: " + barcodeData, Toast.LENGTH_SHORT).show());
-                
-            } catch (Exception e) {
-                e.printStackTrace();
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "❌ Lỗi kết nối! Kiểm tra cáp USB hoặc script PC.", Toast.LENGTH_LONG).show());
-            } finally {
-                if (socket != null) {
-                    try {
-                        socket.close(); // Đóng socket để giải phóng tài nguyên
-                    } catch (Exception ignored) {}
+                WifiNetworkSpecifier specifier = new WifiNetworkSpecifier.Builder()
+                        .setSsidPattern(new PatternMatcher(TARGET_SSID, PatternMatcher.PATTERN_LITERAL))
+                        .setBssid(MacAddress.fromString(TARGET_BSSID))
+                        .build();
+
+                NetworkRequest request = new NetworkRequest.Builder()
+                        .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                        .setNetworkSpecifier(specifier)
+                        .build();
+
+                if (networkCallback != null) {
+                    connectivityManager.unregisterNetworkCallback(networkCallback);
                 }
+
+                networkCallback = new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(Network network) {
+                        super.onAvailable(network);
+                        connectivityManager.bindProcessToNetwork(network);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(MainActivity.this, "Đã ép sóng 5GHz thành công!", Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onUnavailable() {
+                        super.onUnavailable();
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(MainActivity.this, "Không tìm thấy luồng 5GHz hoặc bị từ chối", Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    }
+                };
+
+                connectivityManager.requestNetwork(request, networkCallback);
+                Toast.makeText(this, "Đang quét và ép kết nối...", Toast.LENGTH_SHORT).show();
+
+            } catch (Exception e) {
+                Toast.makeText(this, "Lỗi: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
-        }).start();
+        } else {
+            Toast.makeText(this, "Thiết bị cần chạy Android 10 trở lên", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private boolean checkPermissions() {
+        return ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestPermissions() {
+        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 100);
     }
 }
