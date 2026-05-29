@@ -1,7 +1,9 @@
 name: Android CI Build APK
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [ "main" ]  # Tự động build khi push code lên nhánh main
+  workflow_dispatch:      # Vẫn giữ nút bấm thủ công nếu muốn
 
 jobs:
   build:
@@ -20,13 +22,13 @@ jobs:
     - name: 3. Thiet lap bo may Gradle thuc thi
       uses: gradle/actions/setup-gradle@v3
       with:
-        gradle-version: 8.7 # Ep may ao dung truc tiep Gradle xịn ban 8.7 co san tren may chu
+        gradle-version: 8.7
 
     - name: 4. Bat dau dong goi APK
-      run: gradle assembleDebug --no-daemon # Dung truc tiep lenh gradle he thong, khong can file ./gradlew nua
+      run: gradle assembleDebug --no-daemon
 
     - name: 5. Xuat file APK ra ngoai de tai ve
       uses: actions/upload-artifact@v4
       with:
-        name: MiniScanner-APK-Thanh-Cong
+        name: Wifi5GForce-APK-Thanh-Cong  # Đổi tên gói xuất ra
         path: app/build/outputs/apk/debug/app-debug.apk
