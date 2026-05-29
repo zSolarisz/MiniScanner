@@ -1,30 +1,41 @@
 plugins {
     id 'com.android.application'
 }
+
 android {
+    // Giữ nguyên namespace để trình biên dịch hiểu cấu trúc cây thư mục Java cũ của bạn
     namespace 'com.example.usbbarcodescanner'
     compileSdk 34
+
     defaultConfig {
-        applicationId "com.example.usbbarcodescanner"
-        minSdk 24
+        // 1. Đổi applicationId để tạo một bản cài đặt độc lập, không trùng với app Scanner cũ
+        applicationId "com.example.usbbarcodescanner.wifi5g"
+        
+        // 2. Nâng minSdk lên 29 (Android 10) để sử dụng được các API can thiệp băng tần Wi-Fi
+        minSdk 29
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode = 1
+        versionName = "1.0"
     }
+
     buildTypes {
         release {
             minifyEnabled false
         }
     }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    
+    // Đã giữ nguyên các thư viện ML Kit cũ để đảm bảo dự án không bị lỗi dependency khi build
     implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'
     implementation 'com.google.mlkit:barcode-scanning:17.2.0'
 }
