@@ -2,6 +2,7 @@ package com.example.usbbarcodescanner;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -11,9 +12,11 @@ import android.net.wifi.WifiNetworkSpecifier;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.PatternMatcher;
+import android.text.InputType;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -28,44 +31,54 @@ import java.util.Locale;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "Wifi5GForce";
-    
-    // Tên Wi-Fi chung bị gộp băng tần do nhà mạng thiết lập
-    private final String TARGET_SSID = "HAI HUONG 2.4Ghz";
+    private static final String PREFS_NAME = "WifiConfigPrefs";
+    private static final String KEY_SSID = "saved_ssid";
 
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
     
+    private EditText etSsidInput;
     private TextView tvLogWindow;
     private ScrollView scrollView;
+    private SharedPreferences sharedPreferences;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Khởi tạo giao diện động bằng code (Dynamic UI)
+        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+
         LinearLayout rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);
         rootLayout.setPadding(40, 40, 40, 40);
 
-        // Nút Kích hoạt ép sóng
+        TextView tvLabel = new TextView(this);
+        tvLabel.setText("Nhập Tên Wi-Fi (SSID) cần ép sóng:");
+        tvLabel.setTextSize(14f);
+        rootLayout.addView(tvLabel);
+
+        etSsidInput = new EditText(this);
+        etSsidInput.setHint("Ví dụ: HAI HUONG 2.4Ghz");
+        etSsidInput.setInputType(InputType.TYPE_CLASS_TEXT);
+        String savedSsid = sharedPreferences.getString(KEY_SSID, "HAI HUONG 2.4Ghz");
+        etSsidInput.setText(savedSsid);
+        rootLayout.addView(etSsidInput);
+
         Button btnStart = new Button(this);
         btnStart.setText("BẬT ÉP WI-FI 5GHZ");
         btnStart.setTextSize(16f);
         rootLayout.addView(btnStart);
 
-        // Nút Hủy bỏ ép sóng
         Button btnStop = new Button(this);
         btnStop.setText("TẮT ÉP SÓNG (AUTO)");
         btnStop.setTextSize(16f);
         rootLayout.addView(btnStop);
 
-        // Tiêu đề khu vực Console Log
         TextView tvTitle = new TextView(this);
         tvTitle.setText("\n--- HỆ THỐNG LOGS GIÁM SÁT ---");
         tvTitle.setTextSize(14f);
         rootLayout.addView(tvTitle);
 
-        // Khung cuộn giám sát Log
         scrollView = new ScrollView(this);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f);
@@ -74,8 +87,8 @@ public class MainActivity extends AppCompatActivity {
 
         tvLogWindow = new TextView(this);
         tvLogWindow.setTextSize(12f);
-        tvLogWindow.setBackgroundColor(0xFF222222); // Màu nền Console tối
-        tvLogWindow.setTextColor(0xFF00FF00);       // Chữ màu xanh Matrix
+        tvLogWindow.setBackgroundColor(0xFF222222);
+        tvLogWindow.setTextColor(0xFF00FF00);
         tvLogWindow.setPadding(20, 20, 20, 20);
         scrollView.addView(tvLogWindow);
         
@@ -84,16 +97,26 @@ public class MainActivity extends AppCompatActivity {
 
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
 
-        printLog("Ứng dụng khởi chạy thành công. Hãy chắc chắn đã BẬT ĐỊNH VỊ (GPS) của máy.");
+        printLog("Ứng dụng đã sửa lỗi Core. Sẵn sàng hoạt động linh hoạt.");
 
         btnStart.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                printLog("Bấm nút: BẬT ÉP WI-FI 5GHZ");
+                String currentSsid = etSsidInput.getText().toString().trim();
+                
+                if (currentSsid.isEmpty()) {
+                    printLog("[LỖI] Tên Wi-Fi không được để trống!");
+                    Toast.makeText(MainActivity.this, "Vui lòng nhập tên Wi-Fi!", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                sharedPreferences.edit().putString(KEY_SSID, currentSsid).apply();
+                printLog("Đã lưu cấu hình mạng mục tiêu: " + currentSsid);
+
                 if (checkPermissions()) {
-                    forceConnectTo5GHz();
+                    forceConnectTo5GHz(currentSsid);
                 } else {
-                    printLog("Yêu cầu: Chưa có quyền Vị trí. Đang kích hoạt bảng xin quyền...");
+                    printLog("Yêu cầu: Chưa có quyền Vị trí. Đang xin quyền...");
                     requestPermissions();
                 }
             }
@@ -108,26 +131,24 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void forceConnectTo5GHz() {
+    private void forceConnectTo5GHz(String ssid) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
                 printLog("Đang thiết lập bộ lọc WifiNetworkSpecifier...");
-                printLog("Mục tiêu SSID (Tên mạng): " + TARGET_SSID);
 
-                // Chỉ quét theo Tên mạng (SSID), không khóa cứng MAC để tránh sai số phần cứng
+                // Tạo bộ lọc theo tên mạng linh hoạt nhập từ ô EditText
                 WifiNetworkSpecifier specifier = new WifiNetworkSpecifier.Builder()
-                        .setSsidPattern(new PatternMatcher(TARGET_SSID, PatternMatcher.PATTERN_LITERAL))
+                        .setSsidPattern(new PatternMatcher(ssid, PatternMatcher.PATTERN_LITERAL))
                         .build();
 
-                // Tạo yêu cầu mạng: Bắt buộc chọn luồng WI-FI và ưu tiên dải băng thông cao (5GHz)
+                // ĐÃ FIX: Chỉ yêu cầu duy nhất kiểu truyền tải là WI-FI, gỡ bỏ hoàn toàn bộ lọc capability lỗi
                 NetworkRequest request = new NetworkRequest.Builder()
-                        .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                        .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_CONGESTED) // Lọc luồng thông thoáng
+                        .addTransportType(NetworkCapabilities.TRANSPORT_TRANSPORT_WIFI)
                         .setNetworkSpecifier(specifier)
                         .build();
 
                 if (networkCallback != null) {
-                    printLog("Phát hiện luồng quét cũ đang chạy ngầm. Tiến hành giải phóng...");
+                    printLog("Gỡ bỏ tiến trình quét cũ đang chạy ngầm...");
                     connectivityManager.unregisterNetworkCallback(networkCallback);
                 }
 
@@ -135,13 +156,12 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onAvailable(Network network) {
                         super.onAvailable(network);
-                        // Ép toàn bộ tiến trình ứng dụng và luồng mạng hệ thống ăn theo kết nối này
                         connectivityManager.bindProcessToNetwork(network);
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                printLog("[THÀNH CÔNG] Hệ thống đã bắt tay và khóa cứng vào băng tần 5GHz!");
-                                Toast.makeText(MainActivity.this, "Đã khóa sóng 5GHz nhà thành công!", Toast.LENGTH_SHORT).show();
+                                printLog("[THÀNH CÔNG] Đã bắt tay và ép cứng thiết bị vào Wi-Fi: " + ssid);
+                                Toast.makeText(MainActivity.this, "Đã ép thành công!", Toast.LENGTH_SHORT).show();
                             }
                         });
                     }
@@ -152,8 +172,8 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                printLog("[THẤT BẠI] Quá thời gian quét (Timeout) hoặc hệ thống từ chối kết nối.");
-                                Toast.makeText(MainActivity.this, "Không tìm thấy hoặc từ chối kết nối", Toast.LENGTH_LONG).show();
+                                printLog("[THẤT BẠI] Quá thời gian quét hệ thống hoặc thiết bị từ chối.");
+                                Toast.makeText(MainActivity.this, "Không tìm thấy luồng mạng", Toast.LENGTH_LONG).show();
                             }
                         });
                     }
@@ -164,21 +184,21 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                printLog("[CẢNH BÁO] Đã mất kết nối tới luồng mạng ép sóng.");
+                                printLog("[CẢNH BÁO] Kết nối ép sóng tới mạng " + ssid + " đã bị đứt.");
                             }
                         });
                     }
                 };
 
-                printLog("Gửi yêu cầu quét dải tần lên hệ điều hành Android...");
+                printLog("Đang gửi yêu cầu quét luồng sóng lên Android OS...");
                 connectivityManager.requestNetwork(request, networkCallback);
-                Toast.makeText(this, "Đang quét luồng sóng...", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Đang quét dải sóng...", Toast.LENGTH_SHORT).show();
 
             } catch (Exception e) {
                 printLog("[LỖI THỰC THI] " + e.getMessage());
             }
         } else {
-            printLog("[LỖI THIẾT BỊ] Android dưới phiên bản 10 không hỗ trợ tính năng ép sóng này.");
+            printLog("[LỖI THIẾT BỊ] Android dưới phiên bản 10 không hỗ trợ.");
         }
     }
 
@@ -187,13 +207,13 @@ public class MainActivity extends AppCompatActivity {
             if (networkCallback != null) {
                 connectivityManager.unregisterNetworkCallback(networkCallback);
                 networkCallback = null;
-                printLog("Đã gỡ bỏ NetworkCallback thành công.");
+                printLog("Đã giải phóng NetworkCallback.");
             }
             connectivityManager.bindProcessToNetwork(null);
-            printLog("[HỦY LỆNH ÉP] Đã giải phóng driver Wi-Fi về trạng thái quét tự động.");
-            Toast.makeText(this, "Đã trả Wi-Fi về trạng thái tự động linh hoạt!", Toast.LENGTH_SHORT).show();
+            printLog("[HỦY ÉP SÓNG] Đã trả trạng thái Wi-Fi về mặc định tự động.");
+            Toast.makeText(this, "Đã trả Wi-Fi về tự động linh hoạt!", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            printLog("[THÔNG BÁO] Mạng đã ở trạng thái mặc định sẵn: " + e.getMessage());
+            printLog("[THÔNG BÁO] Hệ thống mạng đang ở trạng thái mặc định: " + e.getMessage());
         }
     }
 
