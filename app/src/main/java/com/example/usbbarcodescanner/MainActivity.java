@@ -4,7 +4,6 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
-import android.net.MacAddress;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
@@ -29,13 +28,13 @@ import java.util.Locale;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "Wifi5GForce";
+    
+    // Tên Wi-Fi chung bị gộp băng tần do nhà mạng thiết lập
     private final String TARGET_SSID = "HAI HUONG 2.4Ghz";
-    private final String TARGET_BSSID = "84:3c:99:57:3d:e0";
 
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
     
-    // Thành phần giao diện hiển thị log
     private TextView tvLogWindow;
     private ScrollView scrollView;
 
@@ -43,41 +42,40 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Bố cục tổng
+        // Khởi tạo giao diện động bằng code (Dynamic UI)
         LinearLayout rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);
         rootLayout.setPadding(40, 40, 40, 40);
 
-        // Nút 1: Bật ép 5GHz
+        // Nút Kích hoạt ép sóng
         Button btnStart = new Button(this);
         btnStart.setText("BẬT ÉP WI-FI 5GHZ");
         btnStart.setTextSize(16f);
         rootLayout.addView(btnStart);
 
-        // Nút 2: Tắt ép, trả về Auto
+        // Nút Hủy bỏ ép sóng
         Button btnStop = new Button(this);
         btnStop.setText("TẮT ÉP SÓNG (AUTO)");
         btnStop.setTextSize(16f);
         rootLayout.addView(btnStop);
 
-        // Tiêu đề khu vực Log
+        // Tiêu đề khu vực Console Log
         TextView tvTitle = new TextView(this);
         tvTitle.setText("\n--- HỆ THỐNG LOGS GIÁM SÁT ---");
         tvTitle.setTextSize(14f);
         rootLayout.addView(tvTitle);
 
-        // Khung cuộn chứa nội dung Log để không bị tràn màn hình
+        // Khung cuộn giám sát Log
         scrollView = new ScrollView(this);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f);
         scrollParams.setMargins(0, 20, 0, 0);
         scrollView.setLayoutParams(scrollParams);
 
-        // Ô văn bản hiển thị nội dung chi tiết của Log
         tvLogWindow = new TextView(this);
         tvLogWindow.setTextSize(12f);
-        tvLogWindow.setBackgroundColor(0xFF222222); // Màu nền xám đen chuẩn console
-        tvLogWindow.setTextColor(0xFF00FF00);       // Chữ màu xanh lá cây Matrix dễ nhìn
+        tvLogWindow.setBackgroundColor(0xFF222222); // Màu nền Console tối
+        tvLogWindow.setTextColor(0xFF00FF00);       // Chữ màu xanh Matrix
         tvLogWindow.setPadding(20, 20, 20, 20);
         scrollView.addView(tvLogWindow);
         
@@ -86,9 +84,8 @@ public class MainActivity extends AppCompatActivity {
 
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
 
-        printLog("Ứng dụng đã khởi chạy thành công. Sẵn sàng kết nối.");
+        printLog("Ứng dụng khởi chạy thành công. Hãy chắc chắn đã BẬT ĐỊNH VỊ (GPS) của máy.");
 
-        // Sự kiện nút Bật
         btnStart.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -96,13 +93,12 @@ public class MainActivity extends AppCompatActivity {
                 if (checkPermissions()) {
                     forceConnectTo5GHz();
                 } else {
-                    printLog("Yêu cầu: Chưa có quyền Vị trí. Đang xin quyền...");
+                    printLog("Yêu cầu: Chưa có quyền Vị trí. Đang kích hoạt bảng xin quyền...");
                     requestPermissions();
                 }
             }
         });
 
-        // Sự kiện nút Tắt
         btnStop.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -115,22 +111,23 @@ public class MainActivity extends AppCompatActivity {
     private void forceConnectTo5GHz() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
-                printLog("Khởi tạo cấu hình Specifier...");
-                printLog("Mục tiêu SSID: " + TARGET_SSID);
-                printLog("Mục tiêu BSSID (MAC 5G): " + TARGET_BSSID);
+                printLog("Đang thiết lập bộ lọc WifiNetworkSpecifier...");
+                printLog("Mục tiêu SSID (Tên mạng): " + TARGET_SSID);
 
+                // Chỉ quét theo Tên mạng (SSID), không khóa cứng MAC để tránh sai số phần cứng
                 WifiNetworkSpecifier specifier = new WifiNetworkSpecifier.Builder()
                         .setSsidPattern(new PatternMatcher(TARGET_SSID, PatternMatcher.PATTERN_LITERAL))
-                        .setBssid(MacAddress.fromString(TARGET_BSSID))
                         .build();
 
+                // Tạo yêu cầu mạng: Bắt buộc chọn luồng WI-FI và ưu tiên dải băng thông cao (5GHz)
                 NetworkRequest request = new NetworkRequest.Builder()
                         .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                        .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_CONGESTED) // Lọc luồng thông thoáng
                         .setNetworkSpecifier(specifier)
                         .build();
 
                 if (networkCallback != null) {
-                    printLog("Hủy bỏ NetworkCallback cũ đang chạy ngầm.");
+                    printLog("Phát hiện luồng quét cũ đang chạy ngầm. Tiến hành giải phóng...");
                     connectivityManager.unregisterNetworkCallback(networkCallback);
                 }
 
@@ -138,13 +135,13 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onAvailable(Network network) {
                         super.onAvailable(network);
-                        // Trói buộc hệ thống vào luồng mạng này
+                        // Ép toàn bộ tiến trình ứng dụng và luồng mạng hệ thống ăn theo kết nối này
                         connectivityManager.bindProcessToNetwork(network);
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                printLog("[THÀNH CÔNG] Android đã chấp nhận và ép cứng vào sóng 5GHz!");
-                                Toast.makeText(MainActivity.this, "Ép sóng 5GHz thành công!", Toast.LENGTH_SHORT).show();
+                                printLog("[THÀNH CÔNG] Hệ thống đã bắt tay và khóa cứng vào băng tần 5GHz!");
+                                Toast.makeText(MainActivity.this, "Đã khóa sóng 5GHz nhà thành công!", Toast.LENGTH_SHORT).show();
                             }
                         });
                     }
@@ -155,8 +152,8 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                printLog("[THẤT BẠI] Không tìm thấy trạm phát 5GHz hoặc thiết bị từ chối kết nối (Timeout).");
-                                Toast.makeText(MainActivity.this, "Không tìm thấy luồng 5GHz", Toast.LENGTH_LONG).show();
+                                printLog("[THẤT BẠI] Quá thời gian quét (Timeout) hoặc hệ thống từ chối kết nối.");
+                                Toast.makeText(MainActivity.this, "Không tìm thấy hoặc từ chối kết nối", Toast.LENGTH_LONG).show();
                             }
                         });
                     }
@@ -167,21 +164,21 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                printLog("[CẢNH BÁO] Kết nối tới trạm 5GHz đã bị mất (Có thể do bạn đi quá xa).");
+                                printLog("[CẢNH BÁO] Đã mất kết nối tới luồng mạng ép sóng.");
                             }
                         });
                     }
                 };
 
-                printLog("Đang gửi yêu cầu ép sóng lên hệ điều hành Android (requestNetwork)...");
+                printLog("Gửi yêu cầu quét dải tần lên hệ điều hành Android...");
                 connectivityManager.requestNetwork(request, networkCallback);
-                Toast.makeText(this, "Đang kích hoạt ép sóng...", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Đang quét luồng sóng...", Toast.LENGTH_SHORT).show();
 
             } catch (Exception e) {
-                printLog("[LỖI HỆ THỐNG] " + e.getMessage());
+                printLog("[LỖI THỰC THI] " + e.getMessage());
             }
         } else {
-            printLog("[LỖI] Phiên bản Android thấp hơn 10, không hỗ trợ WifiNetworkSpecifier.");
+            printLog("[LỖI THIẾT BỊ] Android dưới phiên bản 10 không hỗ trợ tính năng ép sóng này.");
         }
     }
 
@@ -190,31 +187,27 @@ public class MainActivity extends AppCompatActivity {
             if (networkCallback != null) {
                 connectivityManager.unregisterNetworkCallback(networkCallback);
                 networkCallback = null;
-                printLog("Đã gỡ bỏ đăng ký NetworkCallback.");
+                printLog("Đã gỡ bỏ NetworkCallback thành công.");
             }
             connectivityManager.bindProcessToNetwork(null);
-            printLog("[HỦY LỆNH] Đã giải phóng luồng ép. Wi-Fi quay về trạng thái tự động.");
-            Toast.makeText(this, "Đã trả Wi-Fi về tự động!", Toast.LENGTH_SHORT).show();
+            printLog("[HỦY LỆNH ÉP] Đã giải phóng driver Wi-Fi về trạng thái quét tự động.");
+            Toast.makeText(this, "Đã trả Wi-Fi về trạng thái tự động linh hoạt!", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             printLog("[THÔNG BÁO] Mạng đã ở trạng thái mặc định sẵn: " + e.getMessage());
         }
     }
 
-    // Hàm in log chuyên dụng: Vừa ghi vào hệ thống, vừa in ra màn hình app
     private void printLog(final String message) {
         String timeStamp = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
         final String logLine = "[" + timeStamp + "] " + message + "\n";
         
-        // Ghi vào Logcat hệ thống để debug nếu cần
         Log.d(TAG, message);
 
-        // Hiển thị trực tiếp lên giao diện TextView của App
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 if (tvLogWindow != null) {
                     tvLogWindow.append(logLine);
-                    // Tự động cuộn khung nhìn xuống dòng log mới nhất dưới cùng
                     scrollView.post(new Runnable() {
                         @Override
                         public void run() {
