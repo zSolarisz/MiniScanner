@@ -1,4 +1,4 @@
-package com.example.usbbarcodescanner; // Giữ đúng tên package cũ để không lệch thư mục
+package com.example.usbbarcodescanner;
 
 import android.Manifest;
 import android.content.Context;
@@ -14,13 +14,13 @@ import android.os.Bundle;
 import android.os.PatternMatcher;
 import android.view.View;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
 public class MainActivity extends AppCompatActivity {
 
-    // Thông số mạng nhà bạn thu thập từ Wi-Fi Analyzer
     private final String TARGET_SSID = "HAI HUONG 2.4Ghz";
     private final String TARGET_BSSID = "84:3c:99:57:3d:e0";
 
@@ -31,15 +31,29 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Tạo giao diện động trực tiếp bằng Java, không phụ thuộc vào file XML
-        Button button = new Button(this);
-        button.setText("ÉP KẾT NỐI WI-FI 5GHZ NHÀ");
-        button.setTextSize(18f);
-        setContentView(button);
+        // Tạo bố cục Layout chứa 2 nút bấm
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(50, 50, 50, 50);
+
+        // Nút 1: Bật ép 5GHz
+        Button btnStart = new Button(this);
+        btnStart.setText("BẬT ÉP WI-FI 5GHZ");
+        btnStart.setTextSize(18f);
+        layout.addView(btnStart);
+
+        // Nút 2: Tắt ép, trả về Auto
+        Button btnStop = new Button(this);
+        btnStop.setText("TẮT ÉP SÓNG (TRẢ VỀ AUTO)");
+        btnStop.setTextSize(18f);
+        layout.addView(btnStop);
+
+        setContentView(layout);
 
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
 
-        button.setOnClickListener(new View.OnClickListener() {
+        // Sự kiện nút Bật
+        btnStart.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (checkPermissions()) {
@@ -47,6 +61,14 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     requestPermissions();
                 }
+            }
+        });
+
+        // Sự kiện nút Tắt
+        btnStop.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                release5GHzConnection();
             }
         });
     }
@@ -87,20 +109,33 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                Toast.makeText(MainActivity.this, "Không tìm thấy luồng 5GHz hoặc bị từ chối", Toast.LENGTH_LONG).show();
+                                Toast.makeText(MainActivity.this, "Không tìm thấy luồng 5GHz", Toast.LENGTH_LONG).show();
                             }
                         });
                     }
                 };
 
                 connectivityManager.requestNetwork(request, networkCallback);
-                Toast.makeText(this, "Đang quét và ép kết nối...", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Đang kích hoạt ép sóng...", Toast.LENGTH_SHORT).show();
 
             } catch (Exception e) {
                 Toast.makeText(this, "Lỗi: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
-        } else {
-            Toast.makeText(this, "Thiết bị cần chạy Android 10 trở lên", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // Hàm giải phóng luồng ép Wi-Fi, trả driver về mặc định
+    private void release5GHzConnection() {
+        try {
+            if (networkCallback != null) {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+                networkCallback = null;
+            }
+            // Gỡ bỏ liên kết mạng của ứng dụng với hệ thống
+            connectivityManager.bindProcessToNetwork(null);
+            Toast.makeText(this, "Đã tắt ép sóng. Wi-Fi trả về tự động!", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Mạng đã ở trạng thái tự động sẵn", Toast.LENGTH_SHORT).show();
         }
     }
 
